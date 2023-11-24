@@ -11,79 +11,89 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config structure to hold the configuration data
 type Config struct {
-	Alpaca struct {
-		APIKey      string `json:"apiKey"`
-		APISecret   string `json:"apiSecret"`
-		APIEndpoint string `json:"apiEndpoint"`
-	} `json:"alpaca"`
+	AlpacaAPIKey    string `json:"apiKey"`
+	AlpacaAPISecret string `json:"apiSecret"`
+	AlpacaBaseUrl   string `json:"apiEndpoint"`
+	Port            string `json:"port"`
 }
 
 func main() {
-	config := loadConfig()
-	// fmt.Println("It is a start...")
+	// Load configuration
+	config, err := loadConfig()
+	if err != nil {
+		log.Fatal("Error loading configuration:", err)
+	}
 
-	client := alpaca.NewClient(alpaca.ClientOpts{
-		APIKey:    config.Alpaca.APIKey,
-		APISecret: config.Alpaca.APISecret,
-		BaseURL:   config.Alpaca.APIEndpoint,
+	//Create new alpaca client
+	aClient := alpaca.NewClient(alpaca.ClientOpts{
+		APIKey:    config.AlpacaAPIKey,
+		APISecret: config.AlpacaAPISecret,
+		BaseURL:   config.AlpacaBaseUrl,
 	})
 
-	acct, err := client.GetAccount()
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("%_v\n", *acct)
-
+	// Initialize Gin router
 	router := mux.NewRouter()
+	// router.HandleFunc("/start-stream", startStreamHandler).Methods("GET")
+	router.HandleFunc("/accountInfo", getAccountInfoHandler(aClient)).Methods("GET")
 
-	router.HandleFunc("/account", getAccountInfo).Methods("GET")
-
-	// Start server
-	port := 8080
-	fmt.Printf("Server is running on port %d...\n", port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), router))
-
+	log.Fatal(http.ListenAndServe(":5000", router))
 }
 
-func loadConfig() Config {
+// loadConfig loads the configuration from a JSON file
+func loadConfig() (c Config, err error) {
+	viper.AddConfigPath("./config")
 	viper.SetConfigName("config")
 	viper.SetConfigType("json")
-	viper.AddConfigPath(".")
-	viper.AutomaticEnv()
+	readerr := viper.ReadInConfig()
 
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Error reading config file: %s", err)
+	if readerr != nil {
+		fmt.Println("Error reading in config", readerr)
 	}
-
-	var config Config
-
-	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("Error unmarshalling config: %s", err)
-	}
-
-	return config
-
-}
-
-func getAccountInfo(w http.ResponseWriter, r *http.Request) {
-	account, err := alpaca.GetAccount()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting account info %s", err), http.StatusInternalServerError)
+	if c.Port = viper.GetString("Port"); err != nil {
 		return
 	}
-
-	response, err := json.Marshal(account)
-	if err != nil {
-		httpError(w, fmt.Sprintf("Error marshalling response: %s", err), http.StatusInternalServerError)
+	if c.AlpacaAPIKey = viper.GetString("apiKey"); err != nil {
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(response)
+	if c.AlpacaAPISecret = viper.GetString("apiSecret"); err != nil {
+		return
+	}
+	if c.AlpacaBaseUrl = viper.GetString("apiEndpoint"); err != nil {
+		return
+	}
+	return c, nil
 }
 
-func httpError(w http.ResponseWriter, s string, i int) {
-	panic("unimplemented")
+// func startStreamHandler(w http.ResponseWriter, r *http.Request) {
+// 	account, err := alpaca.GetAccount()
+// 	if err != nil {
+// 		log.Fatal("Error getting account:", err)
+// 	}
+
+// 	fmt.Printf("Connected to account: %s\n", account.ID)
+
+// 	conn, err := alpaca.Stre
+// }
+
+func getAccountInfoHandler(aClient *alpaca.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		account, err := aClient.GetAccount()
+		if err != nil {
+			http.Error(w, "Error getting account info", http.StatusInternalServerError)
+			return
+		}
+
+		accountJSON, err := json.Marshal(account)
+		if err != nil {
+			http.Error(w, "error converting accounti nformation to JSON", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		w.Write(accountJSON)
+	}
 }
